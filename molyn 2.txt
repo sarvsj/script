@@ -1,0 +1,118 @@
+local Workspace = game:GetService("Workspace")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+-- Main configuration
+local CONFIG = {
+    speed = 19,
+    jumpPower = 117,
+    maxHealth = 248,
+    respawnTime = 8,
+    debugMode = false
+}
+
+-- Event connections
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local damageEvent = remotes:WaitForChild("DamageEvent")
+local healEvent = remotes:WaitForChild("HealEvent")
+local respawnEvent = remotes:WaitForChild("RespawnEvent")
+
+-- Weapon definitions
+local weapons = {
+    { name = "Sword", damage = 15, cooldown = 0.8, range = 4 },
+    { name = "Bow", damage = 10, cooldown = 1.2, range = 30 },
+    { name = "Staff", damage = 25, cooldown = 2.5, range = 15 }
+}
+
+-- Cooldown tracker
+local lastAttack = {}
+
+-- Utility function
+local function calculateDamage(baseDamage, distance)
+    local modifier = 1
+
+    if distance > 10 then
+        modifier = modifier * (1 - (distance - 10) * 0.02)
+    end
+
+    modifier = modifier * (math.random() * 0.2 + 0.9)
+
+    return math.floor(baseDamage * modifier)
+end
+
+-- Setup player
+local function setupPlayer(player)
+    player.CharacterAdded:Connect(function(character)
+        local humanoid = character:WaitForChild("Humanoid")
+
+        humanoid.WalkSpeed = CONFIG.speed
+        humanoid.JumpPower = CONFIG.jumpPower
+        humanoid.MaxHealth = CONFIG.maxHealth
+        humanoid.Health = CONFIG.maxHealth
+    end)
+end
+
+-- 🔒 SECURE DAMAGE HANDLER (ONLY ONE CONNECTION)
+damageEvent.OnServerEvent:Connect(function(player, targetPlayer, _, weaponIndex)
+    if not player or not targetPlayer then return end
+    if not player.Character or not targetPlayer.Character then return end
+
+    local weapon = weapons[weaponIndex or 1]
+    if not weapon then return end
+
+    -- Cooldown check
+    local now = tick()
+    if lastAttack[player] and (now - lastAttack[player]) < weapon.cooldown then
+        return
+    end
+    lastAttack[player] = now
+
+    local attackerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+    if not attackerRoot or not targetRoot then return end
+
+    local distance = (attackerRoot.Position - targetRoot.Position).Magnitude
+    if distance > weapon.range then return end
+
+    local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+    if not targetHumanoid then return end
+
+    -- 🔒 Server decides damage (no exploit)
+    local finalDamage = calculateDamage(weapon.damage, distance)
+
+    targetHumanoid.Health = math.max(0, targetHumanoid.Health - finalDamage)
+
+    remotes.DamageEffect:FireClient(targetPlayer, finalDamage)
+end)
+
+-- Initialize players
+for _, player in ipairs(Players:GetPlayers()) do
+    setupPlayer(player)
+end
+
+Players.PlayerAdded:Connect(setupPlayer)
+
+-- Game loop
+RunService.Heartbeat:Connect(function()
+    for _, player in ipairs(Players:GetPlayers()) do
+        local character = player.Character
+        if character then
+            local humanoid = character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health <= 0 then
+                if not character:FindFirstChild("Respawning") then
+                    local respawning = Instance.new("BoolValue")
+                    respawning.Name = "Respawning"
+                    respawning.Parent = character
+
+                    task.delay(CONFIG.respawnTime, function()
+                        respawnEvent:FireClient(player)
+                    end)
+                end
+            end
+        end
+    end
+end)
