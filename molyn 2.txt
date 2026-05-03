@@ -1,36 +1,31 @@
-local Workspace = game:GetService("Workspace")
-local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
--- Main configuration
+-- Config
 local CONFIG = {
-    speed = 19,
-    jumpPower = 117,
-    maxHealth = 248,
-    respawnTime = 8,
-    debugMode = false
+    speed = 17,
+    jumpPower = 107,
+    maxHealth = 142,
+    respawnTime = 3
 }
 
--- Event connections
+-- Remotes
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local damageEvent = remotes:WaitForChild("DamageEvent")
-local healEvent = remotes:WaitForChild("HealEvent")
 local respawnEvent = remotes:WaitForChild("RespawnEvent")
 
--- Weapon definitions
+-- Weapons
 local weapons = {
-    { name = "Sword", damage = 15, cooldown = 0.8, range = 4 },
-    { name = "Bow", damage = 10, cooldown = 1.2, range = 30 },
-    { name = "Staff", damage = 25, cooldown = 2.5, range = 15 }
+    {name="Sword", damage=15, cooldown=0.8, range=4},
+    {name="Bow", damage=10, cooldown=1.2, range=30},
+    {name="Staff", damage=25, cooldown=2.5, range=15}
 }
 
--- Cooldown tracker
+-- Cooldowns
 local lastAttack = {}
 
--- Utility function
+-- Damage calc
 local function calculateDamage(baseDamage, distance)
     local modifier = 1
 
@@ -43,7 +38,7 @@ local function calculateDamage(baseDamage, distance)
     return math.floor(baseDamage * modifier)
 end
 
--- Setup player
+-- Player setup
 local function setupPlayer(player)
     player.CharacterAdded:Connect(function(character)
         local humanoid = character:WaitForChild("Humanoid")
@@ -55,7 +50,7 @@ local function setupPlayer(player)
     end)
 end
 
--- 🔒 SECURE DAMAGE HANDLER (ONLY ONE CONNECTION)
+-- 🔒 Secure damage system (single connection)
 damageEvent.OnServerEvent:Connect(function(player, targetPlayer, _, weaponIndex)
     if not player or not targetPlayer then return end
     if not player.Character or not targetPlayer.Character then return end
@@ -63,7 +58,7 @@ damageEvent.OnServerEvent:Connect(function(player, targetPlayer, _, weaponIndex)
     local weapon = weapons[weaponIndex or 1]
     if not weapon then return end
 
-    -- Cooldown check
+    -- Cooldown
     local now = tick()
     if lastAttack[player] and (now - lastAttack[player]) < weapon.cooldown then
         return
@@ -81,32 +76,31 @@ damageEvent.OnServerEvent:Connect(function(player, targetPlayer, _, weaponIndex)
     local targetHumanoid = targetPlayer.Character:FindFirstChild("Humanoid")
     if not targetHumanoid then return end
 
-    -- 🔒 Server decides damage (no exploit)
     local finalDamage = calculateDamage(weapon.damage, distance)
-
     targetHumanoid.Health = math.max(0, targetHumanoid.Health - finalDamage)
 
     remotes.DamageEffect:FireClient(targetPlayer, finalDamage)
 end)
 
--- Initialize players
+-- Setup players
 for _, player in ipairs(Players:GetPlayers()) do
     setupPlayer(player)
 end
 
 Players.PlayerAdded:Connect(setupPlayer)
 
--- Game loop
+-- Respawn loop
 RunService.Heartbeat:Connect(function()
     for _, player in ipairs(Players:GetPlayers()) do
-        local character = player.Character
-        if character then
-            local humanoid = character:FindFirstChild("Humanoid")
+        local char = player.Character
+        if char then
+            local humanoid = char:FindFirstChild("Humanoid")
+
             if humanoid and humanoid.Health <= 0 then
-                if not character:FindFirstChild("Respawning") then
-                    local respawning = Instance.new("BoolValue")
-                    respawning.Name = "Respawning"
-                    respawning.Parent = character
+                if not char:FindFirstChild("Respawning") then
+                    local tag = Instance.new("BoolValue")
+                    tag.Name = "Respawning"
+                    tag.Parent = char
 
                     task.delay(CONFIG.respawnTime, function()
                         respawnEvent:FireClient(player)
